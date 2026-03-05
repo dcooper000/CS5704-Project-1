@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+
+<!-- Created with Claude Code -->
+ <!-- Prompt: I am trying to make a webpage that allows for uploading documents.
+  The necessary functionality is upload, rename, and delete. -->
+
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Document Manager</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 700px; margin: 40px auto; padding: 0 20px; }
+    h1 { font-size: 1.5rem; }
+    #drop-zone {
+      border: 2px dashed #aaa;
+      border-radius: 8px;
+      padding: 30px;
+      text-align: center;
+      color: #666;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    #drop-zone.dragover { background: #eef; border-color: #66a; }
+    #drop-zone input { display: none; }
+    #file-list { margin-top: 24px; }
+    .file-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 0;
+      border-bottom: 1px solid #eee;
+    }
+    .file-name { flex: 1; font-size: 0.95rem; word-break: break-all; }
+    .file-name.editing { display: none; }
+    .rename-input {
+      flex: 1;
+      font-size: 0.95rem;
+      display: none;
+      padding: 2px 6px;
+      border: 1px solid #aaa;
+      border-radius: 4px;
+    }
+    .rename-input.editing { display: block; }
+    .file-size { font-size: 0.8rem; color: #888; white-space: nowrap; }
+    button { cursor: pointer; padding: 4px 10px; border-radius: 4px; border: 1px solid #ccc; background: #f5f5f5; }
+    button:hover { background: #e0e0e0; }
+    button.delete { color: #c00; border-color: #c00; }
+    button.delete:hover { background: #fee; }
+    button.save { color: #060; border-color: #060; }
+    button.save:hover { background: #efe; }
+    #empty-msg { color: #aaa; font-style: italic; margin-top: 12px; }
+    #status { margin-top: 10px; font-size: 0.85rem; color: #666; min-height: 1.2em; }
+  </style>
+</head>
+<body>
+  <h1>Document Manager</h1>
+
+  <div id="drop-zone" onclick="document.getElementById('file-input').click()">
+    <p>Click or drag &amp; drop files here to upload</p>
+    <input type="file" id="file-input" multiple>
+  </div>
+  <div id="status"></div>
+
+  <div id="file-list">
+    <p id="empty-msg">No files uploaded yet.</p>
+  </div>
+
+  <script>
+    let files = [];
+
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const fileList = document.getElementById('file-list');
+    const emptyMsg = document.getElementById('empty-msg');
+    const statusEl = document.getElementById('status');
+
+    function setStatus(msg) { statusEl.textContent = msg; }
+
+    // Load existing files from server on page load
+    async function loadFiles() {
+      try {
+        const res = await fetch('/files');
+        files = await res.json();
+        render();
+      } catch (e) {
+        setStatus('Could not connect to server.');
+      }
+    }
+
+    // Upload via click or drag-and-drop
+    fileInput.addEventListener('change', () => uploadFiles(fileInput.files));
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault();
+      dropZone.classList.remove('dragover');
+      uploadFiles(e.dataTransfer.files);
+    });
+
+    async function uploadFiles(fileObjects) {
+      if (!fileObjects.length) return;
+      setStatus('Uploading...');
+      const formData = new FormData();
+      for (const f of fileObjects) formData.append('files', f);
+      fileInput.value = '';
+
+      try {
+        const res = await fetch('/upload', { method: 'POST', body: formData });
+        if (!res.ok) throw new Error('Upload failed');
+        const added = await res.json();
+        files.push(...added);
+        render();
+        setStatus(`Uploaded ${added.length} file(s).`);
+      } catch (e) {
+        setStatus('Upload failed.');
+      }
+    }
+
+    function startRename(id) {
+      const row = document.querySelector(`.file-row[data-id="${id}"]`);
+      row.querySelector('.file-name').classList.add('editing');
+      const input = row.querySelector('.rename-input');
+      input.classList.add('editing');
+      input.focus();
+      input.select();
+    }
+
+    async function saveRename(id) {
+      const row = document.querySelector(`.file-row[data-id="${id}"]`);
+      const newName = row.querySelector('.rename-input').value.trim();
+      if (!newName) return;
+
+      try {
+        const res = await fetch(`/files/${id}/rename`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: newName })
+        });
+        if (!res.ok) throw new Error('Rename failed');
+        const updated = await res.json();
+        const entry = files.find(f => f.id === id);
+        if (entry) entry.name = updated.name;
+        render();
+      } catch (e) {
+        setStatus('Rename failed.');
+      }
+    }
+
+    async function deleteFile(id) {
+      try {
+        const res = await fetch(`/files/${id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('Delete failed');
+        files = files.filter(f => f.id !== id);
+        render();
+      } catch (e) {
+        setStatus('Delete failed.');
+      }
+    }
+
+    function render() {
+      fileList.querySelectorAll('.file-row').forEach(r => r.remove());
+      emptyMsg.style.display = files.length === 0 ? '' : 'none';
+
+      for (const f of files) {
+        const row = document.createElement('div');
+        row.className = 'file-row';
+        row.dataset.id = f.id;
+        row.innerHTML = `
+          <span class="file-name">${esc(f.name)}</span>
+          <input class="rename-input" type="text" value="${esc(f.name)}">
+          <span class="file-size">${fmtSize(f.size)}</span>
+          <button onclick="startRename(${f.id})">Rename</button>
+          <button class="save" onclick="saveRename(${f.id})">Save</button>
+          <button class="delete" onclick="deleteFile(${f.id})">Delete</button>
+        `;
+        const input = row.querySelector('.rename-input');
+        input.addEventListener('keydown', e => {
+          if (e.key === 'Enter') saveRename(f.id);
+          if (e.key === 'Escape') render();
+        });
+        fileList.appendChild(row);
+      }
+    }
+
+    function fmtSize(b) {
+      if (b < 1024) return b + ' B';
+      if (b < 1024 ** 2) return (b / 1024).toFixed(1) + ' KB';
+      return (b / 1024 ** 2).toFixed(1) + ' MB';
+    }
+
+    function esc(s) {
+      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    loadFiles();
+  </script>
+</body>
+</html>
