@@ -1,0 +1,64 @@
+<!-- Created with Claude Code -->
+<!-- Prompt: Make a new webpage which shows a list of 
+ all the html files uploaded and has links which let those pages be opened -->
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Assignments</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 700px; margin: 40px auto; padding: 0 20px; }
+    h1 { font-size: 1.5rem; }
+    ul { list-style: none; padding: 0; margin-top: 20px; }
+    li {
+      padding: 10px 0;
+      border-bottom: 1px solid #eee;
+    }
+    a { text-decoration: none; color: #26a; font-size: 0.95rem; }
+    a:hover { text-decoration: underline; }
+    .file-size { font-size: 0.8rem; color: #888; margin-left: 8px; }
+    #empty-msg { color: #aaa; font-style: italic; margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <h1>Assignments</h1>
+  <ul id="page-list"></ul>
+  <p id="empty-msg" style="display:none">No assignments uploaded yet.</p>
+
+  <script>
+    async function load() {
+      const res = await fetch('/files');
+      const files = await res.json();
+      const htmlFiles = files.filter(f => f.name.toLowerCase().endsWith('.html'));
+
+      const list = document.getElementById('page-list');
+      const empty = document.getElementById('empty-msg');
+
+      if (htmlFiles.length === 0) {
+        empty.style.display = '';
+        return;
+      }
+
+      for (const f of htmlFiles) {
+        const li = document.createElement('li');
+        li.innerHTML = `<a href="/files/${f.id}/content" target="_blank">${esc(f.name)}</a>`;
+        list.appendChild(li);
+      }
+    }
+
+    function fmtSize(b) {
+      if (b < 1024) return b + ' B';
+      if (b < 1024 ** 2) return (b / 1024).toFixed(1) + ' KB';
+      return (b / 1024 ** 2).toFixed(1) + ' MB';
+    }
+
+    function esc(s) {
+      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    load();
+  </script>
+</body>
+</html>
